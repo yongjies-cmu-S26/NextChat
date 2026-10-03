@@ -6,6 +6,19 @@ import { getModelProvider, isModelNotavailableInServer } from "../utils/model";
 
 const serverConfig = getServerSideConfig();
 
+// Models covered by OpenAI's free daily usage program. Requests made with the
+// free key are restricted to these so they are never billed. Override with the
+// OPENAI_FREE_MODELS env var (comma separated).
+const FREE_TIER_MODELS = new Set(
+  (
+    process.env.OPENAI_FREE_MODELS ??
+    "gpt-5.4,gpt-5.2,gpt-5.1,gpt-5,gpt-4.1,gpt-4o,o1,o3,gpt-5.4-mini,gpt-5.4-nano,gpt-5-mini,gpt-5-nano,gpt-4.1-mini,gpt-4.1-nano,gpt-4o-mini,o3-mini,o4-mini"
+  )
+    .split(",")
+    .map((m) => m.trim())
+    .filter(Boolean),
+);
+
 export async function requestOpenai(req: NextRequest) {
   const controller = new AbortController();
 
@@ -108,16 +121,31 @@ export async function requestOpenai(req: NextRequest) {
     signal: controller.signal,
   };
 
+  const freeKeyApplied = req.headers.get("x-free-key-applied") === "1";
+
   // #1815 try to refuse gpt4 request
-  if (serverConfig.customModels && req.body) {
+  if ((serverConfig.customModels || freeKeyApplied) && req.body) {
     try {
       const clonedBody = await req.text();
       fetchOptions.body = clonedBody;
 
       const jsonBody = JSON.parse(clonedBody) as { model?: string };
 
+      if (freeKeyApplied && !FREE_TIER_MODELS.has(jsonBody?.model as string)) {
+        return NextResponse.json(
+          {
+            error: true,
+            message: `${jsonBody?.model} is not covered by the free key, switch to the paid key or pick a free model`,
+          },
+          {
+            status: 403,
+          },
+        );
+      }
+
       // not undefined and is false
       if (
+        serverConfig.customModels &&
         isModelNotavailableInServer(
           serverConfig.customModels,
           jsonBody?.model as string,
@@ -140,6 +168,13 @@ export async function requestOpenai(req: NextRequest) {
       }
     } catch (e) {
       console.error("[OpenAI] gpt4 filter", e);
+      if (freeKeyApplied) {
+        // fail closed: never forward unchecked requests with the free key
+        return NextResponse.json(
+          { error: true, message: "invalid request body" },
+          { status: 400 },
+        );
+      }
     }
   }
 

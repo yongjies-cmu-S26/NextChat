@@ -25,6 +25,9 @@ function parseApiKey(bearToken: string) {
 }
 
 export function auth(req: NextRequest, modelProvider: ModelProvider) {
+  // internal marker, must never be controlled by the client
+  req.headers.delete("x-free-key-applied");
+
   const authToken = req.headers.get("Authorization") ?? "";
 
   // check if it is openai api key or user token
@@ -108,6 +111,17 @@ export function auth(req: NextRequest, modelProvider: ModelProvider) {
       default:
         if (req.nextUrl.pathname.includes("azure/deployments")) {
           systemApiKey = serverConfig.azureApiKey;
+        } else if (req.headers.get("x-key-tier") === "free") {
+          // user picked the "free" key in the UI
+          const freeKey = process.env.OPENAI_API_KEY_FREE;
+          if (!freeKey) {
+            return {
+              error: true,
+              msg: "free api key is not configured on the server",
+            };
+          }
+          systemApiKey = freeKey;
+          req.headers.set("x-free-key-applied", "1");
         } else {
           systemApiKey = serverConfig.apiKey;
         }
