@@ -169,6 +169,58 @@ export function SideBarContainer(props: {
   );
 }
 
+function KeyTierSwitch() {
+  const [tier, setTier] = useState<"paid" | "free">("paid");
+
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem("key-tier") === "free") setTier("free");
+    } catch (e) {}
+  }, []);
+
+  const choose = (t: "paid" | "free") => {
+    setTier(t);
+    try {
+      window.localStorage.setItem("key-tier", t);
+    } catch (e) {}
+  };
+
+  const btn = (t: "paid" | "free", label: string) => (
+    <button
+      type="button"
+      onClick={() => choose(t)}
+      style={{
+        border: "none",
+        cursor: "pointer",
+        padding: "2px 8px",
+        fontSize: 12,
+        fontWeight: 400,
+        background: tier === t ? "var(--primary)" : "transparent",
+        color: tier === t ? "var(--white)" : "var(--black)",
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <span
+      title="Key"
+      style={{
+        display: "inline-flex",
+        marginLeft: 8,
+        verticalAlign: "middle",
+        border: "1px solid var(--border-in-light)",
+        borderRadius: 12,
+        overflow: "hidden",
+      }}
+    >
+      {btn("paid", "付费")}
+      {btn("free", "免费")}
+    </span>
+  );
+}
+
 export function SideBarHeader(props: {
   title?: string | React.ReactNode;
   subTitle?: string | React.ReactNode;
@@ -250,7 +302,12 @@ export function SideBar(props: { className?: string }) {
       {...props}
     >
       <SideBarHeader
-        title="NextChat"
+        title={
+          <>
+            NextChat
+            <KeyTierSwitch />
+          </>
+        }
         subTitle="Build your own AI assistant."
         logo={<ChatGptIcon />}
         shouldNarrow={shouldNarrow}
