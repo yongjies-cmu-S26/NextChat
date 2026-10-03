@@ -24,6 +24,7 @@ import {
   NARROW_SIDEBAR_WIDTH,
   Path,
   REPO_URL,
+  ServiceProvider,
 } from "../constant";
 
 import { Link, useNavigate } from "react-router-dom";
@@ -32,6 +33,8 @@ import dynamic from "next/dynamic";
 import { Selector, showConfirm } from "./ui-lib";
 import clsx from "clsx";
 import { isMcpEnabled } from "../mcp/actions";
+import { isFreeTierModel, setKeyTier, useKeyTier } from "../utils/key-tier";
+import { useAllModels } from "../utils/hooks";
 
 const DISCOVERY = [
   { name: Locale.Plugin.Name, path: Path.Plugins },
@@ -169,20 +172,47 @@ export function SideBarContainer(props: {
   );
 }
 
-function KeyTierSwitch() {
-  const [tier, setTier] = useState<"paid" | "free">("paid");
+const FREE_CHAT_MODEL = "gpt-5.4";
+const FREE_SUMMARY_MODEL = "gpt-5.4-mini";
 
-  useEffect(() => {
-    try {
-      if (window.localStorage.getItem("key-tier") === "free") setTier("free");
-    } catch (e) {}
-  }, []);
+function KeyTierSwitch() {
+  const tier = useKeyTier();
+  const allModels = useAllModels();
+  const config = useAppConfig();
+  const chatStore = useChatStore();
+
+  // find the OpenAI-provider entry of a free-program model
+  const findFreeModel = (name: string) =>
+    allModels.find(
+      (m) =>
+        m.name === name &&
+        m.available &&
+        isFreeTierModel(m.name, m.provider?.providerName),
+    );
 
   const choose = (t: "paid" | "free") => {
-    setTier(t);
-    try {
-      window.localStorage.setItem("key-tier", t);
-    } catch (e) {}
+    if (t === "free") {
+      // switch the chat model and the summary/title model to free ones,
+      // otherwise the server rejects the requests
+      const chat = findFreeModel(FREE_CHAT_MODEL);
+      const summary = findFreeModel(FREE_SUMMARY_MODEL);
+      const apply = (mc: any) => {
+        if (chat) {
+          mc.model = chat.name;
+          mc.providerName = chat.provider?.providerName as ServiceProvider;
+        }
+        if (summary) {
+          mc.compressModel = summary.name;
+          mc.compressProviderName = summary.provider
+            ?.providerName as ServiceProvider;
+        }
+      };
+      config.update((c) => apply(c.modelConfig));
+      chatStore.updateTargetSession(chatStore.currentSession(), (session) =>
+        apply(session.mask.modelConfig),
+      );
+    }
+    setKeyTier(t);
   };
 
   const btn = (t: "paid" | "free", label: string) => (
