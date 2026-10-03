@@ -362,6 +362,16 @@ export function getHeaders(ignoreHeaders: boolean = false) {
     );
   }
 
+  // which server-side OpenAI key to use: "paid" (default) or "free"
+  try {
+    if (
+      typeof window !== "undefined" &&
+      window.localStorage.getItem("key-tier") === "free"
+    ) {
+      headers["x-key-tier"] = "free";
+    }
+  } catch (e) {}
+
   return headers;
 }
 
