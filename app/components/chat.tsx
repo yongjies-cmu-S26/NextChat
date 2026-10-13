@@ -117,6 +117,17 @@ import { ExportMessageModal } from "./exporter";
 import { getClientConfig } from "../config/client";
 import { useAllModels } from "../utils/hooks";
 import { setWebSearchEnabled, useWebSearchEnabled } from "../utils/web-search";
+import {
+  ReasoningEffort,
+  setReasoningEffort,
+  supportsReasoningEffort,
+  useReasoningEffort,
+} from "../utils/reasoning-effort";
+import {
+  AttachFile,
+  getMessageFiles,
+  readPdfAsDataUrl,
+} from "../utils/attach-files";
 import { ClientApi, MultimodalContent } from "../client/api";
 import { createTTSPlayer } from "../utils/audio";
 import { MsEdgeTTS, OUTPUT_FORMAT } from "../utils/ms_edge_tts";
@@ -402,6 +413,97 @@ function ClearContextDivider() {
   );
 }
 
+function FileIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+    </svg>
+  );
+}
+
+function ThinkIcon(props: { on: boolean }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={props.on ? "var(--primary)" : "currentColor"}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M9 18h6" />
+      <path d="M10 22h4" />
+      <path d="M12 2a7 7 0 0 0-4 12.7V16h8v-1.3A7 7 0 0 0 12 2z" />
+    </svg>
+  );
+}
+
+const EFFORT_LABEL: Record<ReasoningEffort, string> = {
+  default: "思考：标准",
+  high: "思考：深度",
+  low: "思考：快速",
+};
+const NEXT_EFFORT: Record<ReasoningEffort, ReasoningEffort> = {
+  default: "high",
+  high: "low",
+  low: "default",
+};
+
+function FileChip(props: { name: string; onRemove?: () => void }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        padding: "2px 8px",
+        margin: "4px 4px 0 0",
+        fontSize: 12,
+        borderRadius: 10,
+        border: "1px solid var(--border-in-light)",
+        background: "var(--white)",
+        color: "var(--black)",
+        maxWidth: 240,
+      }}
+      title={props.name}
+    >
+      <FileIcon />
+      <span
+        style={{
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {props.name}
+      </span>
+      {props.onRemove && (
+        <span
+          style={{ cursor: "pointer", marginLeft: 2 }}
+          onClick={(e) => {
+            e.preventDefault();
+            props.onRemove?.();
+          }}
+        >
+          ×
+        </span>
+      )}
+    </span>
+  );
+}
+
 function GlobeIcon(props: { on: boolean }) {
   return (
     <svg
@@ -513,6 +615,7 @@ function useScrollToBottom(
 
 export function ChatActions(props: {
   uploadImage: () => void;
+  uploadFile: () => void;
   setAttachImages: (images: string[]) => void;
   setUploading: (uploading: boolean) => void;
   showPromptModal: () => void;
@@ -551,6 +654,7 @@ export function ChatActions(props: {
     session.mask.modelConfig?.providerName || ServiceProvider.OpenAI;
   const allModels = useAllModels();
   const webSearchOn = useWebSearchEnabled();
+  const reasoningEffort = useReasoningEffort();
   const models = useMemo(() => {
     const filteredModels = allModels.filter((m) => m.available);
     const defaultModel = filteredModels.find((m) => m.isDefault);
@@ -650,6 +754,11 @@ export function ChatActions(props: {
           />
         )}
         <ChatAction
+          onClick={props.uploadFile}
+          text="上传 PDF"
+          icon={<FileIcon />}
+        />
+        <ChatAction
           onClick={nextTheme}
           text={Locale.Chat.InputActions.Theme[theme]}
           icon={
@@ -699,6 +808,14 @@ export function ChatActions(props: {
           text={currentModelName}
           icon={<RobotIcon />}
         />
+
+        {supportsReasoningEffort(currentModel) && (
+          <ChatAction
+            onClick={() => setReasoningEffort(NEXT_EFFORT[reasoningEffort])}
+            text={EFFORT_LABEL[reasoningEffort]}
+            icon={<ThinkIcon on={reasoningEffort !== "default"} />}
+          />
+        )}
 
         <ChatAction
           onClick={() => setWebSearchEnabled(!webSearchOn)}
@@ -1059,6 +1176,7 @@ function _Chat() {
   const isMobileScreen = useMobileScreen();
   const navigate = useNavigate();
   const [attachImages, setAttachImages] = useState<string[]>([]);
+  const [attachFiles, setAttachFiles] = useState<AttachFile[]>([]);
   const [uploading, setUploading] = useState(false);
 
   // prompt hints
@@ -1130,7 +1248,12 @@ function _Chat() {
   };
 
   const doSubmit = (userInput: string) => {
-    if (userInput.trim() === "" && isEmpty(attachImages)) return;
+    if (
+      userInput.trim() === "" &&
+      isEmpty(attachImages) &&
+      isEmpty(attachFiles)
+    )
+      return;
     const matchCommand = chatCommands.match(userInput);
     if (matchCommand.matched) {
       setUserInput("");
@@ -1140,9 +1263,10 @@ function _Chat() {
     }
     setIsLoading(true);
     chatStore
-      .onUserInput(userInput, attachImages)
+      .onUserInput(userInput, attachImages, false, attachFiles)
       .then(() => setIsLoading(false));
     setAttachImages([]);
+    setAttachFiles([]);
     chatStore.setLastInput(userInput);
     setUserInput("");
     setPromptHints([]);
@@ -1293,7 +1417,10 @@ function _Chat() {
     setIsLoading(true);
     const textContent = getMessageTextContent(userMessage);
     const images = getMessageImages(userMessage);
-    chatStore.onUserInput(textContent, images).then(() => setIsLoading(false));
+    const files = getMessageFiles(userMessage);
+    chatStore
+      .onUserInput(textContent, images, false, files)
+      .then(() => setIsLoading(false));
     inputRef.current?.focus();
   };
 
@@ -1578,6 +1705,26 @@ function _Chat() {
     },
     [attachImages, chatStore],
   );
+
+  async function uploadFile() {
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = "application/pdf,.pdf";
+    fileInput.multiple = true;
+    fileInput.onchange = async (event: any) => {
+      const files: File[] = Array.from(event.target.files ?? []);
+      const added: AttachFile[] = [];
+      for (const f of files) {
+        try {
+          added.push(await readPdfAsDataUrl(f));
+        } catch (e: any) {
+          showToast(e?.message ?? String(e));
+        }
+      }
+      setAttachFiles((prev) => [...prev, ...added].slice(0, 5));
+    };
+    fileInput.click();
+  }
 
   async function uploadImage() {
     const images: string[] = [];
@@ -2011,6 +2158,13 @@ function _Chat() {
                               parentRef={scrollRef}
                               defaultShow={i >= messages.length - 6}
                             />
+                            {getMessageFiles(message).length > 0 && (
+                              <div>
+                                {getMessageFiles(message).map((f, index) => (
+                                  <FileChip key={index} name={f.filename} />
+                                ))}
+                              </div>
+                            )}
                             {getMessageImages(message).length == 1 && (
                               <img
                                 className={styles["chat-message-item-image"]}
@@ -2073,6 +2227,7 @@ function _Chat() {
 
               <ChatActions
                 uploadImage={uploadImage}
+                uploadFile={uploadFile}
                 setAttachImages={setAttachImages}
                 setUploading={setUploading}
                 showPromptModal={() => setShowPromptModal(true)}
@@ -2099,6 +2254,11 @@ function _Chat() {
                   [styles["chat-input-panel-inner-attach"]]:
                     attachImages.length !== 0,
                 })}
+                style={
+                  attachFiles.length !== 0 && attachImages.length === 0
+                    ? { paddingBottom: 40 }
+                    : undefined
+                }
                 htmlFor="chat-input"
               >
                 <textarea
@@ -2119,6 +2279,30 @@ function _Chat() {
                     fontFamily: config.fontFamily,
                   }}
                 />
+                {attachFiles.length != 0 && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 30,
+                      bottom: 6,
+                      right: 120,
+                      display: "flex",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    {attachFiles.map((f, index) => (
+                      <FileChip
+                        key={index}
+                        name={f.filename}
+                        onRemove={() =>
+                          setAttachFiles(
+                            attachFiles.filter((_, i) => i !== index),
+                          )
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
                 {attachImages.length != 0 && (
                   <div className={styles["attach-images"]}>
                     {attachImages.map((image, index) => {
