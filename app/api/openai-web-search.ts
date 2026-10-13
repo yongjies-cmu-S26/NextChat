@@ -13,6 +13,7 @@ type ChatPart = {
   type: string;
   text?: string;
   image_url?: { url: string };
+  file?: { filename?: string; file_data?: string };
 };
 
 type ChatMessage = {
@@ -43,6 +44,12 @@ function toResponsesInput(messages: ChatMessage[]) {
           if (p.type === "text") return { type: "input_text", text: p.text };
           if (p.type === "image_url" && p.image_url?.url)
             return { type: "input_image", image_url: p.image_url.url };
+          if (p.type === "file" && p.file?.file_data)
+            return {
+              type: "input_file",
+              filename: p.file.filename ?? "file.pdf",
+              file_data: p.file.file_data,
+            };
           return null;
         })
         .filter(Boolean),
@@ -59,7 +66,11 @@ function chunk(delta: Record<string, string>) {
 export async function requestOpenaiWebSearch(req: NextRequest) {
   const serverConfig = getServerSideConfig();
 
-  let body: { model?: string; messages?: ChatMessage[] };
+  let body: {
+    model?: string;
+    messages?: ChatMessage[];
+    reasoning_effort?: string;
+  };
   try {
     body = JSON.parse(await req.text());
   } catch (e) {
@@ -116,6 +127,9 @@ export async function requestOpenaiWebSearch(req: NextRequest) {
       stream: true,
       tools: [{ type: "web_search" }],
       input: toResponsesInput(body.messages ?? []),
+      ...(body.reasoning_effort && {
+        reasoning: { effort: body.reasoning_effort },
+      }),
     }),
     signal: req.signal,
   });
