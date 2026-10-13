@@ -1,3 +1,4 @@
+import { getWebSearchEnabled } from "../utils/web-search";
 import {
   getMessageTextContent,
   isDalle3,
@@ -460,7 +461,11 @@ export const useChatStore = createPersistStore(
         // make request
         api.llm.chat({
           messages: sendMessages,
-          config: { ...modelConfig, stream: true },
+          config: {
+            ...modelConfig,
+            stream: true,
+            webSearch: getWebSearchEnabled(),
+          },
           onUpdate(message) {
             botMessage.streaming = true;
             if (message) {
