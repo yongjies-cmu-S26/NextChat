@@ -1,4 +1,6 @@
 import { getWebSearchEnabled } from "../utils/web-search";
+import { getReasoningEffort } from "../utils/reasoning-effort";
+import { AttachFile } from "../utils/attach-files";
 import {
   getMessageTextContent,
   isDalle3,
@@ -409,6 +411,7 @@ export const useChatStore = createPersistStore(
         content: string,
         attachImages?: string[],
         isMcpResponse?: boolean,
+        attachFiles?: AttachFile[],
       ) {
         const session = get().currentSession();
         const modelConfig = session.mask.modelConfig;
@@ -418,12 +421,20 @@ export const useChatStore = createPersistStore(
           ? content
           : fillTemplateWith(content, modelConfig);
 
-        if (!isMcpResponse && attachImages && attachImages.length > 0) {
+        if (
+          !isMcpResponse &&
+          ((attachImages && attachImages.length > 0) ||
+            (attachFiles && attachFiles.length > 0))
+        ) {
           mContent = [
             ...(content ? [{ type: "text" as const, text: content }] : []),
-            ...attachImages.map((url) => ({
+            ...(attachImages ?? []).map((url) => ({
               type: "image_url" as const,
               image_url: { url },
+            })),
+            ...(attachFiles ?? []).map((f) => ({
+              type: "file" as const,
+              file: { filename: f.filename, file_data: f.file_data },
             })),
           ];
         }
@@ -465,6 +476,10 @@ export const useChatStore = createPersistStore(
             ...modelConfig,
             stream: true,
             webSearch: getWebSearchEnabled(),
+            reasoningEffort: (() => {
+              const e = getReasoningEffort();
+              return e === "default" ? undefined : e;
+            })(),
           },
           onUpdate(message) {
             botMessage.streaming = true;
