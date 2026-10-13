@@ -200,7 +200,11 @@ export class ChatGPTApi implements LLMApi {
       options.config.model.startsWith("o1") ||
       options.config.model.startsWith("o3") ||
       options.config.model.startsWith("o4-mini");
-    const isGpt5 =  options.config.model.startsWith("gpt-5");
+    // gpt-5.x and gpt-6.x only accept the default temperature and need
+    // max_completion_tokens instead of max_tokens
+    const isGpt5 =
+      options.config.model.startsWith("gpt-5") ||
+      options.config.model.startsWith("gpt-6");
     if (isDalle3) {
       const prompt = getMessageTextContent(
         options.messages.slice(-1)?.pop() as any,
