@@ -317,10 +317,17 @@ export class ChatGPTApi implements LLMApi {
             useChatStore.getState().currentSession().mask?.plugin || [],
           );
         // console.log("getAsTools", tools, funcs);
+        const headers = getHeaders();
+        if (
+          options.config.webSearch &&
+          modelConfig.providerName !== ServiceProvider.Azure
+        ) {
+          headers["x-web-search"] = "1";
+        }
         streamWithThink(
           chatPath,
           requestPayload,
-          getHeaders(),
+          headers,
           tools as any,
           funcs,
           controller,
