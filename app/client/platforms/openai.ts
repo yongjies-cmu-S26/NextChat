@@ -17,6 +17,7 @@ import {
   usePluginStore,
 } from "@/app/store";
 import { collectModelsWithDefaultModel } from "@/app/utils/model";
+import { hasFileParts } from "@/app/utils/attach-files";
 import {
   preProcessImageContent,
   uploadImage,
@@ -67,6 +68,7 @@ export interface RequestPayload {
   top_p: number;
   max_tokens?: number;
   max_completion_tokens?: number;
+  reasoning_effort?: "low" | "high";
 }
 
 export interface DalleRequestPayload {
@@ -223,9 +225,11 @@ export class ChatGPTApi implements LLMApi {
       const visionModel = isVisionModel(options.config.model);
       const messages: ChatOptions["messages"] = [];
       for (const v of options.messages) {
-        const content = visionModel
-          ? await preProcessImageContent(v.content)
-          : getMessageTextContent(v);
+        // keep multimodal content for vision models and for PDF attachments
+        const content =
+          visionModel || hasFileParts(v.content)
+            ? await preProcessImageContent(v.content)
+            : getMessageTextContent(v);
         if (!(isO1OrO3 && v.role === "system"))
           messages.push({ role: v.role, content });
       }
@@ -245,11 +249,23 @@ export class ChatGPTApi implements LLMApi {
         // Please do not ask me why not send max_tokens, no reason, this param is just shit, I dont want to explain anymore.
       };
 
+      // 思考强度 (reasoning effort) for reasoning models
+      if ((isGpt5 || isO1OrO3) && options.config.reasoningEffort) {
+        requestPayload.reasoning_effort = options.config.reasoningEffort;
+      }
+
       if (isGpt5) {
   	// Remove max_tokens if present
   	delete requestPayload.max_tokens;
   	// Add max_completion_tokens (or max_completion_tokens if that's what you meant)
   	requestPayload["max_completion_tokens"] = modelConfig.max_tokens;
+        // deep thinking spends many tokens on reasoning before answering
+        if (options.config.reasoningEffort === "high") {
+          requestPayload["max_completion_tokens"] = Math.max(
+            modelConfig.max_tokens,
+            32000,
+          );
+        }
 
       } else if (isO1OrO3) {
         // by default the o1/o3 models will not attempt to produce output that includes markdown formatting
