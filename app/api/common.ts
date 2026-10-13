@@ -9,7 +9,7 @@ const serverConfig = getServerSideConfig();
 // Models covered by OpenAI's free daily usage program. Requests made with the
 // free key are restricted to these so they are never billed. Override with the
 // OPENAI_FREE_MODELS env var (comma separated).
-const FREE_TIER_MODELS = new Set(
+export const FREE_TIER_MODELS = new Set(
   (
     process.env.OPENAI_FREE_MODELS ??
     "gpt-5.4,gpt-5.2,gpt-5.1,gpt-5,gpt-4.1,gpt-4o,o1,o3,gpt-5.4-mini,gpt-5.4-nano,gpt-5-mini,gpt-5-nano,gpt-4.1-mini,gpt-4.1-nano,gpt-4o-mini,o3-mini,o4-mini"

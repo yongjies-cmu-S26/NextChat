@@ -5,6 +5,7 @@ import { prettyObject } from "@/app/utils/format";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "./auth";
 import { requestOpenai } from "./common";
+import { requestOpenaiWebSearch } from "./openai-web-search";
 
 const ALLOWED_PATH = new Set(Object.values(OpenaiPath));
 
@@ -59,6 +60,14 @@ export async function handle(
   }
 
   try {
+    // web search uses OpenAI's built-in tool via the Responses API
+    if (
+      subpath === OpenaiPath.ChatPath &&
+      req.headers.get("x-web-search") === "1"
+    ) {
+      return await requestOpenaiWebSearch(req);
+    }
+
     const response = await requestOpenai(req);
 
     // list models
