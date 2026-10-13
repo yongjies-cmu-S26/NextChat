@@ -23,8 +23,11 @@ import { getHeaders } from "../client/api";
 import { getClientConfig } from "../config/client";
 import { createPersistStore } from "../utils/store";
 import { ensure } from "../utils/clone";
-import { DEFAULT_CONFIG } from "./config";
-import { getModelProvider } from "../utils/model";
+import { DEFAULT_CONFIG, useAppConfig } from "./config";
+import {
+  collectModelsWithDefaultModel,
+  getModelProvider,
+} from "../utils/model";
 
 let fetchState = 0; // 0 not fetch, 1 fetching, 2 done
 
@@ -153,6 +156,44 @@ const DEFAULT_ACCESS_STATE = {
   edgeTTSVoiceName: "zh-CN-YunxiNeural",
 };
 
+const SYNCED_DEFAULT_MODEL_KEY = "synced-default-model";
+
+function syncDefaultModel(defaultModel: string, serverCustomModels: string) {
+  const apply = () => {
+    try {
+      if (localStorage.getItem(SYNCED_DEFAULT_MODEL_KEY) === defaultModel) {
+        return;
+      }
+      const config = useAppConfig.getState();
+      const [name, provider] = getModelProvider(defaultModel);
+      const target = collectModelsWithDefaultModel(
+        config.models,
+        [config.customModels, serverCustomModels].join(","),
+        defaultModel,
+      ).find(
+        (m) =>
+          m.name === name &&
+          m.available &&
+          (!provider || m.provider?.providerName === provider),
+      );
+      if (!target) return;
+      config.update((c) => {
+        c.modelConfig.model = target.name as any;
+        c.modelConfig.providerName = target.provider?.providerName as any;
+      });
+      localStorage.setItem(SYNCED_DEFAULT_MODEL_KEY, defaultModel);
+    } catch (e) {
+      console.error("[Config] failed to sync default model", e);
+    }
+  };
+
+  if (useAppConfig.persist?.hasHydrated?.()) {
+    apply();
+  } else {
+    useAppConfig.persist?.onFinishHydration?.(() => apply());
+  }
+}
+
 export const useAccessStore = createPersistStore(
   { ...DEFAULT_ACCESS_STATE },
 
@@ -266,6 +307,13 @@ export const useAccessStore = createPersistStore(
             const [model, providerName] = getModelProvider(defaultModel);
             DEFAULT_CONFIG.modelConfig.model = model;
             DEFAULT_CONFIG.modelConfig.providerName = providerName as any;
+          }
+
+          // Align every visitor's default model with the server's DEFAULT_MODEL.
+          // Runs once per DEFAULT_MODEL value, so the owner can change it on the
+          // server and everyone follows; visitors can still pick another model.
+          if (defaultModel !== "") {
+            syncDefaultModel(defaultModel, res.customModels ?? "");
           }
 
           return res;
