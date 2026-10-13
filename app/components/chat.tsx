@@ -116,6 +116,7 @@ import { prettyObject } from "../utils/format";
 import { ExportMessageModal } from "./exporter";
 import { getClientConfig } from "../config/client";
 import { useAllModels } from "../utils/hooks";
+import { setWebSearchEnabled, useWebSearchEnabled } from "../utils/web-search";
 import { ClientApi, MultimodalContent } from "../client/api";
 import { createTTSPlayer } from "../utils/audio";
 import { MsEdgeTTS, OUTPUT_FORMAT } from "../utils/ms_edge_tts";
@@ -401,6 +402,25 @@ function ClearContextDivider() {
   );
 }
 
+function GlobeIcon(props: { on: boolean }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={props.on ? "var(--primary)" : "currentColor"}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <path d="M2 12h20" />
+      <path d="M12 2a15 15 0 0 1 0 20a15 15 0 0 1 0-20" />
+    </svg>
+  );
+}
+
 export function ChatAction(props: {
   text: string;
   icon: JSX.Element;
@@ -530,6 +550,7 @@ export function ChatActions(props: {
   const currentProviderName =
     session.mask.modelConfig?.providerName || ServiceProvider.OpenAI;
   const allModels = useAllModels();
+  const webSearchOn = useWebSearchEnabled();
   const models = useMemo(() => {
     const filteredModels = allModels.filter((m) => m.available);
     const defaultModel = filteredModels.find((m) => m.isDefault);
@@ -677,6 +698,12 @@ export function ChatActions(props: {
           onClick={() => setShowModelSelector(true)}
           text={currentModelName}
           icon={<RobotIcon />}
+        />
+
+        <ChatAction
+          onClick={() => setWebSearchEnabled(!webSearchOn)}
+          text={webSearchOn ? "联网搜索：开" : "联网搜索：关"}
+          icon={<GlobeIcon on={webSearchOn} />}
         />
 
         {showModelSelector && (
@@ -1818,8 +1845,7 @@ function _Chat() {
                                       10,
                                     );
                                     let newContent:
-                                      | string
-                                      | MultimodalContent[] = newMessage;
+                                      string | MultimodalContent[] = newMessage;
                                     const images = getMessageImages(message);
                                     if (images.length > 0) {
                                       newContent = [
